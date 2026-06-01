@@ -7,7 +7,7 @@ from datetime import date, datetime
 TOKEN = "vk1.a.HC0dIDDvX_S11Rvu0v_z8XIuv9uzPIPqS_O9Xu4dMF_T_6FEYBqvkK7jqFiNrntG65esMnAzvdgNa08eJ3Cqp2e3BMmFXzVjrmjwoTvtCou-1XZCPaaE46giu1s1QPz7iRHbfjdAYtdrDkFFA6X1RGHZcbjlhMdrethcP4INDYkw6hd_ryR0l-PjnlTwGKQJARfm0jdJX9_VT2KiWAGYfA"
 
 # ID группы (число без минуса, например если группа -123456789 → GROUP_ID = 123456789)
-GROUP_ID = 239267601  # ← ЗАМЕНИ НА ID СВОЕЙ ГРУППЫ
+GROUP_ID = 0  # ← ЗАМЕНИ НА ID СВОЕЙ ГРУППЫ
 
 # ─── Проверка владельца группы через VK API ───────────────
 def is_group_creator(vk, user_id):
@@ -199,7 +199,7 @@ def handle(vk, event):
         send(vk, uid, format_stats(row))
 
     # ── Команды администратора ────────────────────────────
-    elif cmd == "/statsof" and is_admin:
+    elif cmd == "/statsof" and (is_admin or is_creator):
         if len(parts) < 2:
             send(vk, uid, "❌ Используй: /statsof [id, @ник или ник из базы]")
             return
@@ -209,7 +209,7 @@ def handle(vk, event):
         else:
             send(vk, uid, format_stats(row))
 
-    elif cmd == "/list" and is_admin:
+    elif cmd == "/list" and (is_admin or is_creator):
         rows = get_all_users()
         if not rows:
             send(vk, uid, "📭 База данных пуста")
@@ -232,7 +232,7 @@ def handle(vk, event):
         if current:
             send(vk, uid, current)
 
-    elif cmd == "/adduser" and is_admin:
+    elif cmd == "/adduser" and (is_admin or is_creator):
         if len(parts) < 3:
             send(vk, uid, "❌ Используй: /adduser [id или @ник] [ник]")
             return
@@ -244,7 +244,7 @@ def handle(vk, event):
         add_user(target_id, nick)
         send(vk, uid, f"✅ Пользователь {nick} (id{target_id}) добавлен в базу")
 
-    elif cmd == "/setnick" and is_admin:
+    elif cmd == "/setnick" and (is_admin or is_creator):
         if len(parts) < 3:
             send(vk, uid, "❌ Используй: /setnick [id или ник] [новый_ник]")
             return
@@ -256,7 +256,7 @@ def handle(vk, event):
         update_field(row[0], "nick", nick)
         send(vk, uid, f"✅ Ник установлен: {nick}")
 
-    elif cmd == "/warn" and is_admin:
+    elif cmd == "/warn" and (is_admin or is_creator):
         if len(parts) < 3:
             send(vk, uid, "❌ Используй: /warn [id или ник] [кол-во]")
             return
@@ -268,7 +268,7 @@ def handle(vk, event):
         update_field(row[0], "warns", val)
         send(vk, uid, f"✅ Выговоры обновлены: {val}")
 
-    elif cmd == "/reprimand" and is_admin:
+    elif cmd == "/reprimand" and (is_admin or is_creator):
         if len(parts) < 3:
             send(vk, uid, "❌ Используй: /reprimand [id или ник] [кол-во]")
             return
@@ -280,7 +280,7 @@ def handle(vk, event):
         update_field(row[0], "reprimands", val)
         send(vk, uid, f"✅ Предупреждения обновлены: {val}")
 
-    elif cmd == "/inactive" and is_admin:
+    elif cmd == "/inactive" and (is_admin or is_creator):
         if len(parts) < 3:
             send(vk, uid, "❌ Используй: /inactive [id или ник] [кол-во]")
             return
@@ -292,7 +292,7 @@ def handle(vk, event):
         update_field(row[0], "inactives", val)
         send(vk, uid, f"✅ Неактивы обновлены: {val}")
 
-    elif cmd == "/points" and is_admin:
+    elif cmd == "/points" and (is_admin or is_creator):
         if len(parts) < 3:
             send(vk, uid, "❌ Используй: /points [id или ник] [кол-во]")
             return
@@ -304,7 +304,7 @@ def handle(vk, event):
         update_field(row[0], "points", val)
         send(vk, uid, f"✅ Баллы обновлены: {val}")
 
-    elif cmd == "/setrank" and is_admin:
+    elif cmd == "/setrank" and (is_admin or is_creator):
         if len(parts) < 3:
             send(vk, uid, "❌ Используй: /setrank [id или ник] [должность]")
             return
@@ -316,7 +316,7 @@ def handle(vk, event):
         update_field(row[0], "rank", rank)
         send(vk, uid, f"✅ Должность обновлена: {rank}")
 
-    elif cmd == "/setadmin" and is_admin:
+    elif cmd == "/setadmin" and (is_admin or is_creator):
         if len(parts) < 3:
             send(vk, uid, "❌ Используй: /setadmin [id или ник] [уровень]")
             return
@@ -328,7 +328,7 @@ def handle(vk, event):
         update_field(row[0], "admin_level", val)
         send(vk, uid, f"✅ Уровень прав обновлён: {val}")
 
-    elif cmd == "/promote" and is_admin:
+    elif cmd == "/promote" and (is_admin or is_creator):
         if len(parts) < 2:
             send(vk, uid, "❌ Используй: /promote [id или ник]")
             return
@@ -340,7 +340,7 @@ def handle(vk, event):
         update_field(row[0], "date_promoted", today)
         send(vk, uid, f"✅ Дата повышения обновлена на сегодня")
 
-    elif cmd == "/setpromote" and is_admin:
+    elif cmd == "/setpromote" and (is_admin or is_creator):
         if len(parts) < 3:
             send(vk, uid, "❌ Используй: /setpromote [id или ник] [дд.мм.гггг]")
             return
@@ -356,7 +356,7 @@ def handle(vk, event):
         except ValueError:
             send(vk, uid, "❌ Неверный формат даты. Используй: дд.мм.гггг")
 
-    elif cmd == "/setappointed" and is_admin:
+    elif cmd == "/setappointed" and (is_admin or is_creator):
         if len(parts) < 3:
             send(vk, uid, "❌ Используй: /setappointed [id или ник] [дд.мм.гггг]")
             return
@@ -412,7 +412,7 @@ def handle(vk, event):
             "/stats — твоя статистика\n"
             "/help — список команд"
         )
-        if is_admin:
+        if is_admin or is_creator:
             msg += (
                 "\n\n🔧 Команды администратора:\n"
                 "/statsof [id или ник] — статистика сотрудника\n"
