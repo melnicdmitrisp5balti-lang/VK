@@ -11,8 +11,11 @@ ADMINS = [806892923]
 
 # ─── База данных ───────────────────────────────────────────
 def get_conn():
-    return psycopg2.connect(os.environ["postgresql://postgres:zttXnXrWBOnvduzaJatzWiByoUxOlXor@postgres.railway.internal:5432/railway"])
-
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        raise Exception("DATABASE_URL не найден в переменных окружения")
+    return psycopg2.connect(db_url)
+    
 def init_db():
     conn = get_conn()
     c = conn.cursor()
