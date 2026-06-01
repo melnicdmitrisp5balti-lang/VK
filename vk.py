@@ -9,20 +9,15 @@ TOKEN = "vk1.a.HC0dIDDvX_S11Rvu0v_z8XIuv9uzPIPqS_O9Xu4dMF_T_6FEYBqvkK7jqFiNrntG6
 # ID группы (число без минуса, например если группа -123456789 → GROUP_ID = 123456789)
 GROUP_ID = 239267601  # ← ЗАМЕНИ НА ID СВОЕЙ ГРУППЫ
 
-# ─── Проверка создателя группы через VK API ────────────────
+# ─── Проверка владельца группы через VK API ───────────────
 def is_group_creator(vk, user_id):
-    try:
-        info = vk.groups.getById(group_id=GROUP_ID, fields="")[0]
-        return info.get("is_admin") and info.get("admin_level") == 3 or False
-    except:
-        pass
     try:
         members = vk.groups.getMembers(group_id=GROUP_ID, filter="managers", fields="role")
         for m in members.get("items", []):
-            if m["id"] == user_id and m.get("role") == "creator":
+            if m["id"] == user_id and m.get("role") in ("creator", "owner"):
                 return True
-    except:
-        pass
+    except Exception as e:
+        print(f"[is_group_creator] ошибка: {e}")
     return False
 
 # ─── База данных ───────────────────────────────────────────
