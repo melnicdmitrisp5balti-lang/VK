@@ -15,7 +15,7 @@ def get_conn():
     if not db_url:
         raise Exception("DATABASE_URL не найден в переменных окружения")
     return psycopg2.connect(db_url)
-    
+ 
 def init_db():
     conn = get_conn()
     c = conn.cursor()
@@ -40,6 +40,14 @@ def get_user(vk_id):
     conn = get_conn()
     c = conn.cursor()
     c.execute("SELECT * FROM users WHERE vk_id=%s", (vk_id,))
+    row = c.fetchone()
+    conn.close()
+    return row
+ 
+def get_user_by_nick(nick):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE LOWER(nick)=LOWER(%s)", (nick,))
     row = c.fetchone()
     conn.close()
     return row
@@ -97,10 +105,8 @@ def format_stats(row):
         d = datetime.strptime(date_prom, "%d.%m.%Y")
         total_days = (datetime.today() - d).days - 1
         clean_days = total_days - inactives
-        if total_days < 0:
-            total_days = 0
-        if clean_days < 0:
-            clean_days = 0
+        if total_days < 0: total_days = 0
+        if clean_days < 0: clean_days = 0
         days_str = f"{clean_days} ({total_days})"
     except:
         days_str = "0 (0)"
@@ -123,6 +129,22 @@ def format_stats(row):
 def send(vk, user_id, message):
     vk.messages.send(user_id=user_id, message=message, random_id=0)
  
+# ─── Поиск пользователя (ник / id / @ник) ─────────────────
+def find_user(vk, query):
+    # Сначала пробуем по нику в базе (если не число и не @ссылка)
+    if not query.startswith("@") and not query.startswith("["):
+        try:
+            int(query)
+        except ValueError:
+            row = get_user_by_nick(query)
+            if row:
+                return row
+    # Затем по vk_id или через VK API
+    target_id = resolve_target(vk, query)
+    if target_id:
+        return get_user(target_id)
+    return None
+ 
 # ─── Обработка команд ──────────────────────────────────────
 def handle(vk, event):
     uid = event.user_id
@@ -134,7 +156,6 @@ def handle(vk, event):
     if cmd == "/stats":
         row = get_user(uid)
         if not row:
-            user_info = vk.users.get(user_ids=uid)[0]
             nick = f"id{uid}"
             add_user(uid, nick)
             row = get_user(uid)
@@ -142,13 +163,9 @@ def handle(vk, event):
  
     elif cmd == "/statsof" and is_admin:
         if len(parts) < 2:
-            send(vk, uid, "❌ Используй: /statsof [id или @ник]")
+            send(vk, uid, "❌ Используй: /statsof [id, @ник или ник из базы]")
             return
-        target_id = resolve_target(vk, parts[1])
-        if not target_id:
-            send(vk, uid, "❌ Пользователь не найден")
-            return
-        row = get_user(target_id)
+        row = find_user(vk, parts[1])
         if not row:
             send(vk, uid, "❌ Пользователь не найден в базе")
         else:
@@ -191,128 +208,128 @@ def handle(vk, event):
  
     elif cmd == "/setnick" and is_admin:
         if len(parts) < 3:
-            send(vk, uid, "❌ Используй: /setnick [id] [ник]")
+            send(vk, uid, "❌ Используй: /setnick [id или ник] [новый_ник]")
             return
-        target_id = resolve_target(vk, parts[1])
-        if not target_id:
+        row = find_user(vk, parts[1])
+        if not row:
             send(vk, uid, "❌ Пользователь не найден")
             return
         nick = " ".join(parts[2:])
-        update_field(target_id, "nick", nick)
+        update_field(row[0], "nick", nick)
         send(vk, uid, f"✅ Ник установлен: {nick}")
  
     elif cmd == "/warn" and is_admin:
         if len(parts) < 3:
-            send(vk, uid, "❌ Используй: /warn [id или @ник] [кол-во]")
+            send(vk, uid, "❌ Используй: /warn [id или ник] [кол-во]")
             return
-        target_id = resolve_target(vk, parts[1])
-        if not target_id:
+        row = find_user(vk, parts[1])
+        if not row:
             send(vk, uid, "❌ Пользователь не найден")
             return
         val = int(parts[2])
-        update_field(target_id, "warns", val)
+        update_field(row[0], "warns", val)
         send(vk, uid, f"✅ Выговоры обновлены: {val}")
  
     elif cmd == "/reprimand" and is_admin:
         if len(parts) < 3:
-            send(vk, uid, "❌ Используй: /reprimand [id или @ник] [кол-во]")
+            send(vk, uid, "❌ Используй: /reprimand [id или ник] [кол-во]")
             return
-        target_id = resolve_target(vk, parts[1])
-        if not target_id:
+        row = find_user(vk, parts[1])
+        if not row:
             send(vk, uid, "❌ Пользователь не найден")
             return
         val = int(parts[2])
-        update_field(target_id, "reprimands", val)
+        update_field(row[0], "reprimands", val)
         send(vk, uid, f"✅ Предупреждения обновлены: {val}")
  
     elif cmd == "/inactive" and is_admin:
         if len(parts) < 3:
-            send(vk, uid, "❌ Используй: /inactive [id или @ник] [кол-во]")
+            send(vk, uid, "❌ Используй: /inactive [id или ник] [кол-во]")
             return
-        target_id = resolve_target(vk, parts[1])
-        if not target_id:
+        row = find_user(vk, parts[1])
+        if not row:
             send(vk, uid, "❌ Пользователь не найден")
             return
         val = int(parts[2])
-        update_field(target_id, "inactives", val)
+        update_field(row[0], "inactives", val)
         send(vk, uid, f"✅ Неактивы обновлены: {val}")
  
     elif cmd == "/points" and is_admin:
         if len(parts) < 3:
-            send(vk, uid, "❌ Используй: /points [id или @ник] [кол-во]")
+            send(vk, uid, "❌ Используй: /points [id или ник] [кол-во]")
             return
-        target_id = resolve_target(vk, parts[1])
-        if not target_id:
+        row = find_user(vk, parts[1])
+        if not row:
             send(vk, uid, "❌ Пользователь не найден")
             return
         val = int(parts[2])
-        update_field(target_id, "points", val)
+        update_field(row[0], "points", val)
         send(vk, uid, f"✅ Баллы обновлены: {val}")
  
     elif cmd == "/setrank" and is_admin:
         if len(parts) < 3:
-            send(vk, uid, "❌ Используй: /setrank [id или @ник] [должность]")
+            send(vk, uid, "❌ Используй: /setrank [id или ник] [должность]")
             return
-        target_id = resolve_target(vk, parts[1])
-        if not target_id:
+        row = find_user(vk, parts[1])
+        if not row:
             send(vk, uid, "❌ Пользователь не найден")
             return
         rank = " ".join(parts[2:])
-        update_field(target_id, "rank", rank)
+        update_field(row[0], "rank", rank)
         send(vk, uid, f"✅ Должность обновлена: {rank}")
  
     elif cmd == "/setadmin" and is_admin:
         if len(parts) < 3:
-            send(vk, uid, "❌ Используй: /setadmin [id или @ник] [уровень]")
+            send(vk, uid, "❌ Используй: /setadmin [id или ник] [уровень]")
             return
-        target_id = resolve_target(vk, parts[1])
-        if not target_id:
+        row = find_user(vk, parts[1])
+        if not row:
             send(vk, uid, "❌ Пользователь не найден")
             return
         val = float(parts[2])
-        update_field(target_id, "admin_level", val)
+        update_field(row[0], "admin_level", val)
         send(vk, uid, f"✅ Уровень прав обновлён: {val}")
  
     elif cmd == "/promote" and is_admin:
         if len(parts) < 2:
-            send(vk, uid, "❌ Используй: /promote [id или @ник]")
+            send(vk, uid, "❌ Используй: /promote [id или ник]")
             return
-        target_id = resolve_target(vk, parts[1])
-        if not target_id:
+        row = find_user(vk, parts[1])
+        if not row:
             send(vk, uid, "❌ Пользователь не найден")
             return
         today = date.today().strftime("%d.%m.%Y")
-        update_field(target_id, "date_promoted", today)
+        update_field(row[0], "date_promoted", today)
         send(vk, uid, f"✅ Дата повышения обновлена на сегодня")
  
     elif cmd == "/setpromote" and is_admin:
         if len(parts) < 3:
-            send(vk, uid, "❌ Используй: /setpromote [id или @ник] [дд.мм.гггг]")
+            send(vk, uid, "❌ Используй: /setpromote [id или ник] [дд.мм.гггг]")
             return
-        target_id = resolve_target(vk, parts[1])
-        if not target_id:
+        row = find_user(vk, parts[1])
+        if not row:
             send(vk, uid, "❌ Пользователь не найден")
             return
         new_date = parts[2]
         try:
             datetime.strptime(new_date, "%d.%m.%Y")
-            update_field(target_id, "date_promoted", new_date)
+            update_field(row[0], "date_promoted", new_date)
             send(vk, uid, f"✅ Дата повышения обновлена: {new_date}")
         except ValueError:
             send(vk, uid, "❌ Неверный формат даты. Используй: дд.мм.гггг")
  
     elif cmd == "/setappointed" and is_admin:
         if len(parts) < 3:
-            send(vk, uid, "❌ Используй: /setappointed [id или @ник] [дд.мм.гггг]")
+            send(vk, uid, "❌ Используй: /setappointed [id или ник] [дд.мм.гггг]")
             return
-        target_id = resolve_target(vk, parts[1])
-        if not target_id:
+        row = find_user(vk, parts[1])
+        if not row:
             send(vk, uid, "❌ Пользователь не найден")
             return
         new_date = parts[2]
         try:
             datetime.strptime(new_date, "%d.%m.%Y")
-            update_field(target_id, "date_appointed", new_date)
+            update_field(row[0], "date_appointed", new_date)
             send(vk, uid, f"✅ Дата назначения обновлена: {new_date}")
         except ValueError:
             send(vk, uid, "❌ Неверный формат даты. Используй: дд.мм.гггг")
@@ -322,19 +339,19 @@ def handle(vk, event):
         if is_admin:
             msg += (
                 "\n\n🔧 Команды администратора:\n"
-                "/statsof [id или @ник] — статистика игрока\n"
+                "/statsof [id или ник] — статистика сотрудника\n"
                 "/list — список всех сотрудников\n"
                 "/adduser [id или @ник] [ник] — добавить в базу\n"
-                "/setnick — [id] [Nick_Name] - указывает Nick_Name\n"
-                "/warn [id или @ник] [кол-во] — выговоры\n"
-                "/reprimand [id или @ник] [кол-во] — предупреждения\n"
-                "/inactive [id или @ник] [кол-во] — неактивы\n"
-                "/points [id или @ник] [кол-во] — баллы\n"
-                "/setrank [id или @ник] [должность] — должность\n"
-                "/setadmin [id или @ник] [уровень] — уровень прав\n"
-                "/promote [id или @ник] — дата повышения = сегодня\n"
-                "/setpromote [id или @ник] [дд.мм.гггг] — задать дату повышения\n"
-                "/setappointed [id или @ник] [дд.мм.гггг] — задать дату назначения"
+                "/setnick [id или ник] [новый_ник] — изменить ник\n"
+                "/warn [id или ник] [кол-во] — выговоры\n"
+                "/reprimand [id или ник] [кол-во] — предупреждения\n"
+                "/inactive [id или ник] [кол-во] — неактивы\n"
+                "/points [id или ник] [кол-во] — баллы\n"
+                "/setrank [id или ник] [должность] — должность\n"
+                "/setadmin [id или ник] [уровень] — уровень прав\n"
+                "/promote [id или ник] — дата повышения = сегодня\n"
+                "/setpromote [id или ник] [дд.мм.гггг] — задать дату повышения\n"
+                "/setappointed [id или ник] [дд.мм.гггг] — задать дату назначения"
             )
         send(vk, uid, msg)
  
