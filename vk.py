@@ -107,7 +107,7 @@ def format_stats(row):
 
     return (
         f"📊 Ваша персональная статистика:\n\n"
-        f"👤 Ваш ник: {nick}\n"
+        f"👤 Ваш ник: [id{vk_id}|{nick}]\n"
         f"🎖 Ваша должность: {rank}\n"
         f"⭐ Уровень прав администратора: {admin_level}\n\n"
         f"⚠️ Выговоры: {warns}/{max_warns}\n"
@@ -135,7 +135,7 @@ def handle(vk, event):
         row = get_user(uid)
         if not row:
             user_info = vk.users.get(user_ids=uid)[0]
-            nick = f"{user_info['first_name']} {user_info['last_name']}"
+            nick = f"id{uid}"
             add_user(uid, nick)
             row = get_user(uid)
         send(vk, uid, format_stats(row))
@@ -188,6 +188,21 @@ def handle(vk, event):
         nick = " ".join(parts[2:])
         add_user(target_id, nick)
         send(vk, uid, f"✅ Пользователь {nick} (id{target_id}) добавлен в базу")
+
+    elif cmd == "/setnick" and is_admin:
+    if len(parts) < 3:
+        send(vk, uid, "❌ Используй: /setnick [id] [ник]")
+        return
+
+    target_id = resolve_target(vk, parts[1])
+    if not target_id:
+        send(vk, uid, "❌ Пользователь не найден")
+        return
+
+    nick = " ".join(parts[2:])
+    update_field(target_id, "nick", nick)
+
+    send(vk, uid, f"✅ Ник установлен: {nick}")
 
     elif cmd == "/warn" and is_admin:
         if len(parts) < 3:
@@ -313,6 +328,7 @@ def handle(vk, event):
                 "/statsof [id или @ник] — статистика игрока\n"
                 "/list — список всех сотрудников\n"
                 "/adduser [id или @ник] [ник] — добавить в базу\n"
+                "/setnick — [id] [Nick_Name] - указывает Nick_Name\n"
                 "/warn [id или @ник] [кол-во] — выговоры\n"
                 "/reprimand [id или @ник] [кол-во] — предупреждения\n"
                 "/inactive [id или @ник] [кол-во] — неактивы\n"
