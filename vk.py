@@ -3,12 +3,12 @@ from vk_api.longpoll import VkLongPoll, VkEventType
 import psycopg2
 import os
 from datetime import date, datetime
-
+ 
 TOKEN = "vk1.a.HC0dIDDvX_S11Rvu0v_z8XIuv9uzPIPqS_O9Xu4dMF_T_6FEYBqvkK7jqFiNrntG65esMnAzvdgNa08eJ3Cqp2e3BMmFXzVjrmjwoTvtCou-1XZCPaaE46giu1s1QPz7iRHbfjdAYtdrDkFFA6X1RGHZcbjlhMdrethcP4INDYkw6hd_ryR0l-PjnlTwGKQJARfm0jdJX9_VT2KiWAGYfA"
 
 # ID администраторов (замени на реальные)
 ADMINS = [806892923]
-
+ 
 # ─── База данных ───────────────────────────────────────────
 def get_conn():
     db_url = os.getenv("DATABASE_URL")
@@ -35,7 +35,7 @@ def init_db():
     )''')
     conn.commit()
     conn.close()
-
+ 
 def get_user(vk_id):
     conn = get_conn()
     c = conn.cursor()
@@ -43,7 +43,7 @@ def get_user(vk_id):
     row = c.fetchone()
     conn.close()
     return row
-
+ 
 def add_user(vk_id, nick, date_app=None, date_prom=None):
     conn = get_conn()
     c = conn.cursor()
@@ -56,14 +56,14 @@ def add_user(vk_id, nick, date_app=None, date_prom=None):
               (vk_id, nick, app, prom))
     conn.commit()
     conn.close()
-
+ 
 def update_field(vk_id, field, value):
     conn = get_conn()
     c = conn.cursor()
     c.execute(f"UPDATE users SET {field}=%s WHERE vk_id=%s", (value, vk_id))
     conn.commit()
     conn.close()
-
+ 
 def get_all_users():
     conn = get_conn()
     c = conn.cursor()
@@ -71,7 +71,7 @@ def get_all_users():
     rows = c.fetchall()
     conn.close()
     return rows
-
+ 
 def resolve_target(vk, target_raw):
     if target_raw.startswith("@") or target_raw.startswith("["):
         screen_name = target_raw.strip("@[]").split("|")[0]
@@ -87,12 +87,12 @@ def resolve_target(vk, target_raw):
             return int(target_raw)
         except ValueError:
             return None
-
+ 
 # ─── Форматирование статистики ─────────────────────────────
 def format_stats(row):
     (vk_id, nick, rank, admin_level, warns, max_warns,
      reprimands, max_reprimands, date_app, date_prom, points, inactives) = row
-
+ 
     try:
         d = datetime.strptime(date_prom, "%d.%m.%Y")
         total_days = (datetime.today() - d).days - 1
@@ -104,7 +104,7 @@ def format_stats(row):
         days_str = f"{clean_days} ({total_days})"
     except:
         days_str = "0 (0)"
-
+ 
     return (
         f"📊 Ваша персональная статистика:\n\n"
         f"👤 Ваш ник: [id{vk_id}|{nick}]\n"
@@ -118,11 +118,11 @@ def format_stats(row):
         f"🏆 Баллы: {points} баллов\n"
         f"😴 Неактивы: {inactives}"
     )
-
+ 
 # ─── Отправка сообщения ────────────────────────────────────
 def send(vk, user_id, message):
     vk.messages.send(user_id=user_id, message=message, random_id=0)
-
+ 
 # ─── Обработка команд ──────────────────────────────────────
 def handle(vk, event):
     uid = event.user_id
@@ -130,7 +130,7 @@ def handle(vk, event):
     parts = text.split()
     cmd = parts[0].lower() if parts else ""
     is_admin = uid in ADMINS
-
+ 
     if cmd == "/stats":
         row = get_user(uid)
         if not row:
@@ -139,7 +139,7 @@ def handle(vk, event):
             add_user(uid, nick)
             row = get_user(uid)
         send(vk, uid, format_stats(row))
-
+ 
     elif cmd == "/statsof" and is_admin:
         if len(parts) < 2:
             send(vk, uid, "❌ Используй: /statsof [id или @ник]")
@@ -153,7 +153,7 @@ def handle(vk, event):
             send(vk, uid, "❌ Пользователь не найден в базе")
         else:
             send(vk, uid, format_stats(row))
-
+ 
     elif cmd == "/list" and is_admin:
         rows = get_all_users()
         if not rows:
@@ -176,7 +176,7 @@ def handle(vk, event):
                 current += "\n" + line
         if current:
             send(vk, uid, current)
-
+ 
     elif cmd == "/adduser" and is_admin:
         if len(parts) < 3:
             send(vk, uid, "❌ Используй: /adduser [id или @ник] [ник]")
@@ -188,22 +188,19 @@ def handle(vk, event):
         nick = " ".join(parts[2:])
         add_user(target_id, nick)
         send(vk, uid, f"✅ Пользователь {nick} (id{target_id}) добавлен в базу")
-
+ 
     elif cmd == "/setnick" and is_admin:
-    if len(parts) < 3:
-        send(vk, uid, "❌ Используй: /setnick [id] [ник]")
-        return
-
-    target_id = resolve_target(vk, parts[1])
-    if not target_id:
-        send(vk, uid, "❌ Пользователь не найден")
-        return
-
-    nick = " ".join(parts[2:])
-    update_field(target_id, "nick", nick)
-
-    send(vk, uid, f"✅ Ник установлен: {nick}")
-
+        if len(parts) < 3:
+            send(vk, uid, "❌ Используй: /setnick [id] [ник]")
+            return
+        target_id = resolve_target(vk, parts[1])
+        if not target_id:
+            send(vk, uid, "❌ Пользователь не найден")
+            return
+        nick = " ".join(parts[2:])
+        update_field(target_id, "nick", nick)
+        send(vk, uid, f"✅ Ник установлен: {nick}")
+ 
     elif cmd == "/warn" and is_admin:
         if len(parts) < 3:
             send(vk, uid, "❌ Используй: /warn [id или @ник] [кол-во]")
@@ -215,7 +212,7 @@ def handle(vk, event):
         val = int(parts[2])
         update_field(target_id, "warns", val)
         send(vk, uid, f"✅ Выговоры обновлены: {val}")
-
+ 
     elif cmd == "/reprimand" and is_admin:
         if len(parts) < 3:
             send(vk, uid, "❌ Используй: /reprimand [id или @ник] [кол-во]")
@@ -227,7 +224,7 @@ def handle(vk, event):
         val = int(parts[2])
         update_field(target_id, "reprimands", val)
         send(vk, uid, f"✅ Предупреждения обновлены: {val}")
-
+ 
     elif cmd == "/inactive" and is_admin:
         if len(parts) < 3:
             send(vk, uid, "❌ Используй: /inactive [id или @ник] [кол-во]")
@@ -239,7 +236,7 @@ def handle(vk, event):
         val = int(parts[2])
         update_field(target_id, "inactives", val)
         send(vk, uid, f"✅ Неактивы обновлены: {val}")
-
+ 
     elif cmd == "/points" and is_admin:
         if len(parts) < 3:
             send(vk, uid, "❌ Используй: /points [id или @ник] [кол-во]")
@@ -251,7 +248,7 @@ def handle(vk, event):
         val = int(parts[2])
         update_field(target_id, "points", val)
         send(vk, uid, f"✅ Баллы обновлены: {val}")
-
+ 
     elif cmd == "/setrank" and is_admin:
         if len(parts) < 3:
             send(vk, uid, "❌ Используй: /setrank [id или @ник] [должность]")
@@ -263,7 +260,7 @@ def handle(vk, event):
         rank = " ".join(parts[2:])
         update_field(target_id, "rank", rank)
         send(vk, uid, f"✅ Должность обновлена: {rank}")
-
+ 
     elif cmd == "/setadmin" and is_admin:
         if len(parts) < 3:
             send(vk, uid, "❌ Используй: /setadmin [id или @ник] [уровень]")
@@ -275,7 +272,7 @@ def handle(vk, event):
         val = float(parts[2])
         update_field(target_id, "admin_level", val)
         send(vk, uid, f"✅ Уровень прав обновлён: {val}")
-
+ 
     elif cmd == "/promote" and is_admin:
         if len(parts) < 2:
             send(vk, uid, "❌ Используй: /promote [id или @ник]")
@@ -287,7 +284,7 @@ def handle(vk, event):
         today = date.today().strftime("%d.%m.%Y")
         update_field(target_id, "date_promoted", today)
         send(vk, uid, f"✅ Дата повышения обновлена на сегодня")
-
+ 
     elif cmd == "/setpromote" and is_admin:
         if len(parts) < 3:
             send(vk, uid, "❌ Используй: /setpromote [id или @ник] [дд.мм.гггг]")
@@ -303,7 +300,7 @@ def handle(vk, event):
             send(vk, uid, f"✅ Дата повышения обновлена: {new_date}")
         except ValueError:
             send(vk, uid, "❌ Неверный формат даты. Используй: дд.мм.гггг")
-
+ 
     elif cmd == "/setappointed" and is_admin:
         if len(parts) < 3:
             send(vk, uid, "❌ Используй: /setappointed [id или @ник] [дд.мм.гггг]")
@@ -319,7 +316,7 @@ def handle(vk, event):
             send(vk, uid, f"✅ Дата назначения обновлена: {new_date}")
         except ValueError:
             send(vk, uid, "❌ Неверный формат даты. Используй: дд.мм.гггг")
-
+ 
     elif cmd == "/help":
         msg = "📋 Команды для всех:\n/stats — твоя статистика\n/help — помощь"
         if is_admin:
@@ -340,17 +337,18 @@ def handle(vk, event):
                 "/setappointed [id или @ник] [дд.мм.гггг] — задать дату назначения"
             )
         send(vk, uid, msg)
-
+ 
     elif cmd.startswith("/") and not is_admin:
         send(vk, uid, "❌ У вас нет прав для этой команды")
-
+ 
 # ─── Запуск ────────────────────────────────────────────────
 init_db()
 vk_session = vk_api.VkApi(token=TOKEN)
 vk = vk_session.get_api()
 longpoll = VkLongPoll(vk_session)
-
+ 
 print("Бот запущен...")
 for event in longpoll.listen():
     if event.type == VkEventType.MESSAGE_NEW and event.to_me:
         handle(vk, event)
+ 
