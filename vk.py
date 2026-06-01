@@ -7,7 +7,7 @@ from datetime import date, datetime
 TOKEN = "vk1.a.HC0dIDDvX_S11Rvu0v_z8XIuv9uzPIPqS_O9Xu4dMF_T_6FEYBqvkK7jqFiNrntG65esMnAzvdgNa08eJ3Cqp2e3BMmFXzVjrmjwoTvtCou-1XZCPaaE46giu1s1QPz7iRHbfjdAYtdrDkFFA6X1RGHZcbjlhMdrethcP4INDYkw6hd_ryR0l-PjnlTwGKQJARfm0jdJX9_VT2KiWAGYfA"
 
 # ID группы (число без минуса, например если группа -123456789 → GROUP_ID = 123456789)
-GROUP_ID = 0  # ← ЗАМЕНИ НА ID СВОЕЙ ГРУППЫ
+GROUP_ID = 239267601 # ← ЗАМЕНИ НА ID СВОЕЙ ГРУППЫ
 
 # ─── Проверка владельца группы через VK API ───────────────
 def is_group_creator(vk, user_id):
