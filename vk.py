@@ -2,14 +2,18 @@ import vk_api
 from vk_api.longpoll import VkLongPoll, VkEventType
 import psycopg2
 import os
+import json
 from datetime import date, datetime
 
 TOKEN = "vk1.a.HC0dIDDvX_S11Rvu0v_z8XIuv9uzPIPqS_O9Xu4dMF_T_6FEYBqvkK7jqFiNrntG65esMnAzvdgNa08eJ3Cqp2e3BMmFXzVjrmjwoTvtCou-1XZCPaaE46giu1s1QPz7iRHbfjdAYtdrDkFFA6X1RGHZcbjlhMdrethcP4INDYkw6hd_ryR0l-PjnlTwGKQJARfm0jdJX9_VT2KiWAGYfA"
 
-# ID группы (число без минуса, например если группа -123456789 → GROUP_ID = 123456789)
-GROUP_ID = 239267601 # ← ЗАМЕНИ НА ID СВОЕЙ ГРУППЫ
+GROUP_ID = 239267601
 
-# ─── Проверка владельца группы через VK API ───────────────
+# ─── Состояния ожидания ввода ──────────────────────────────
+# { uid: { "target_id": ..., "field": ..., "nick": ... } }
+pending = {}
+
+# ─── Проверка владельца группы ────────────────────────────
 def is_group_creator(vk, user_id):
     try:
         members = vk.groups.getMembers(group_id=GROUP_ID, filter="managers", fields="role")
@@ -132,6 +136,19 @@ def resolve_target(vk, target_raw):
         except ValueError:
             return None
 
+def find_user(vk, query):
+    if not query.startswith("@") and not query.startswith("["):
+        try:
+            int(query)
+        except ValueError:
+            row = get_user_by_nick(query)
+            if row:
+                return row
+    target_id = resolve_target(vk, query)
+    if target_id:
+        return get_user(target_id)
+    return None
+
 # ─── Форматирование статистики ─────────────────────────────
 def format_stats(row):
     (vk_id, nick, rank, admin_level, warns, max_warns,
@@ -148,10 +165,10 @@ def format_stats(row):
         days_str = "0 (0)"
 
     return (
-        f"📊 Ваша персональная статистика:\n\n"
-        f"👤 Ваш ник: [id{vk_id}|{nick}]\n"
-        f"🎖 Ваша должность: {rank}\n"
-        f"⭐ Уровень прав администратора: {admin_level}\n\n"
+        f"📊 Статистика сотрудника:\n\n"
+        f"👤 Ник: [id{vk_id}|{nick}]\n"
+        f"🎖 Должность: {rank}\n"
+        f"⭐ Уровень прав: {admin_level}\n\n"
         f"⚠️ Выговоры: {warns}/{max_warns}\n"
         f"🔔 Предупреждения: {reprimands}/{max_reprimands}\n\n"
         f"📅 Дата назначения: {date_app}\n"
@@ -161,23 +178,193 @@ def format_stats(row):
         f"😴 Неактивы: {inactives}"
     )
 
-# ─── Отправка сообщения ────────────────────────────────────
-def send(vk, user_id, message):
-    vk.messages.send(user_id=user_id, message=message, random_id=0)
+# ─── Клавиатура редактирования ─────────────────────────────
+def make_edit_keyboard(target_id, row):
+    (vk_id, nick, rank, admin_level, warns, max_warns,
+     reprimands, max_reprimands, date_app, date_prom, points, inactives) = row
 
-# ─── Поиск пользователя (ник / id / @ник) ─────────────────
-def find_user(vk, query):
-    if not query.startswith("@") and not query.startswith("["):
-        try:
-            int(query)
-        except ValueError:
-            row = get_user_by_nick(query)
-            if row:
-                return row
-    target_id = resolve_target(vk, query)
-    if target_id:
-        return get_user(target_id)
-    return None
+    def btn(label, payload, color="secondary"):
+        return {
+            "action": {
+                "type": "text",
+                "label": label,
+                "payload": json.dumps(payload)
+            },
+            "color": color
+        }
+
+    keyboard = {
+        "one_time": False,
+        "inline": False,
+        "buttons": [
+            # Ряд 1 — Выговоры
+            [
+                btn(f"⚠️ Выговор +1 ({warns}/{max_warns})", {"action": "inc", "field": "warns", "target": target_id}, "negative"),
+                btn(f"⚠️ Выговор -1", {"action": "dec", "field": "warns", "target": target_id}, "positive"),
+            ],
+            # Ряд 2 — Предупреждения
+            [
+                btn(f"🔔 Предупр. +1 ({reprimands}/{max_reprimands})", {"action": "inc", "field": "reprimands", "target": target_id}, "negative"),
+                btn(f"🔔 Предупр. -1", {"action": "dec", "field": "reprimands", "target": target_id}, "positive"),
+            ],
+            # Ряд 3 — Баллы
+            [
+                btn(f"🏆 Балл +1 ({points})", {"action": "inc", "field": "points", "target": target_id}, "positive"),
+                btn(f"🏆 Балл -1", {"action": "dec", "field": "points", "target": target_id}, "negative"),
+            ],
+            # Ряд 4 — Неактивы
+            [
+                btn(f"😴 Неактив +1 ({inactives})", {"action": "inc", "field": "inactives", "target": target_id}, "negative"),
+                btn(f"😴 Неактив -1", {"action": "dec", "field": "inactives", "target": target_id}, "positive"),
+            ],
+            # Ряд 5 — Дата повышения + Закрыть
+            [
+                btn("📅 Повышение = сегодня", {"action": "promote", "target": target_id}, "primary"),
+                btn("❌ Закрыть меню", {"action": "close"}, "secondary"),
+            ],
+            # Ряд 6 — Ввод вручную
+            [
+                btn("✏️ Ввести значение вручную", {"action": "manual", "target": target_id}, "primary"),
+            ],
+        ]
+    }
+    return json.dumps(keyboard, ensure_ascii=False)
+
+def make_manual_keyboard(target_id):
+    """Клавиатура выбора поля для ручного ввода"""
+    def btn(label, field):
+        return {
+            "action": {
+                "type": "text",
+                "label": label,
+                "payload": json.dumps({"action": "set_field", "field": field, "target": target_id})
+            },
+            "color": "primary"
+        }
+
+    keyboard = {
+        "one_time": False,
+        "inline": False,
+        "buttons": [
+            [btn("⚠️ Выговоры", "warns"), btn("🔔 Предупреждения", "reprimands")],
+            [btn("🏆 Баллы", "points"), btn("😴 Неактивы", "inactives")],
+            [btn("⭐ Уровень прав", "admin_level"), btn("🎖 Должность", "rank")],
+            [btn("📅 Дата повышения", "date_promoted"), btn("📅 Дата назначения", "date_appointed")],
+            [{
+                "action": {
+                    "type": "text",
+                    "label": "◀️ Назад",
+                    "payload": json.dumps({"action": "back", "target": target_id})
+                },
+                "color": "secondary"
+            }]
+        ]
+    }
+    return json.dumps(keyboard, ensure_ascii=False)
+
+def empty_keyboard():
+    return json.dumps({"buttons": [], "one_time": True})
+
+# ─── Отправка сообщений ────────────────────────────────────
+def send(vk, user_id, message, keyboard=None):
+    params = {
+        "user_id": user_id,
+        "message": message,
+        "random_id": 0
+    }
+    if keyboard:
+        params["keyboard"] = keyboard
+    vk.messages.send(**params)
+
+def send_edit_menu(vk, uid, target_id):
+    row = get_user(target_id)
+    if not row:
+        send(vk, uid, "❌ Пользователь не найден в базе")
+        return
+    kb = make_edit_keyboard(target_id, row)
+    send(vk, uid, format_stats(row) + "\n\n👇 Управление:", keyboard=kb)
+
+# ─── Обработка payload (кнопок) ───────────────────────────
+def handle_payload(vk, uid, payload_str):
+    try:
+        p = json.loads(payload_str)
+    except:
+        return False
+
+    action = p.get("action")
+    target_id = p.get("target")
+
+    # +1 к полю
+    if action == "inc" and target_id:
+        field = p["field"]
+        row = get_user(target_id)
+        if not row:
+            send(vk, uid, "❌ Пользователь не найден")
+            return True
+        idx = {"warns": 4, "reprimands": 6, "points": 10, "inactives": 11}
+        current = row[idx[field]]
+        update_field(target_id, field, current + 1)
+        send_edit_menu(vk, uid, target_id)
+        return True
+
+    # -1 к полю
+    if action == "dec" and target_id:
+        field = p["field"]
+        row = get_user(target_id)
+        if not row:
+            send(vk, uid, "❌ Пользователь не найден")
+            return True
+        idx = {"warns": 4, "reprimands": 6, "points": 10, "inactives": 11}
+        current = row[idx[field]]
+        new_val = max(0, current - 1)
+        update_field(target_id, field, new_val)
+        send_edit_menu(vk, uid, target_id)
+        return True
+
+    # Повышение сегодня
+    if action == "promote" and target_id:
+        today = date.today().strftime("%d.%m.%Y")
+        update_field(target_id, "date_promoted", today)
+        send_edit_menu(vk, uid, target_id)
+        return True
+
+    # Закрыть меню
+    if action == "close":
+        send(vk, uid, "✅ Меню закрыто", keyboard=empty_keyboard())
+        return True
+
+    # Открыть ручной ввод
+    if action == "manual" and target_id:
+        kb = make_manual_keyboard(target_id)
+        send(vk, uid, "✏️ Выбери поле для изменения:", keyboard=kb)
+        return True
+
+    # Выбрано поле для ручного ввода
+    if action == "set_field" and target_id:
+        field = p["field"]
+        row = get_user(target_id)
+        nick = row[1] if row else str(target_id)
+        pending[uid] = {"target_id": target_id, "field": field, "nick": nick}
+        field_names = {
+            "warns": "выговоры",
+            "reprimands": "предупреждения",
+            "points": "баллы",
+            "inactives": "неактивы",
+            "admin_level": "уровень прав",
+            "rank": "должность",
+            "date_promoted": "дату повышения (дд.мм.гггг)",
+            "date_appointed": "дату назначения (дд.мм.гггг)"
+        }
+        fname = field_names.get(field, field)
+        send(vk, uid, f"✏️ Введи новое значение для «{fname}» ({nick}):", keyboard=empty_keyboard())
+        return True
+
+    # Назад в меню редактирования
+    if action == "back" and target_id:
+        send_edit_menu(vk, uid, target_id)
+        return True
+
+    return False
 
 # ─── Обработка команд ──────────────────────────────────────
 def handle(vk, event):
@@ -190,6 +377,58 @@ def handle(vk, event):
     is_admin = uid in ADMINS
     is_creator = is_group_creator(vk, uid)
 
+    # ── Сначала проверяем payload кнопок ──────────────────
+    if hasattr(event, "payload") and event.payload and (is_admin or is_creator):
+        handled = handle_payload(vk, uid, event.payload)
+        if handled:
+            return
+
+    # ── Проверяем ожидание ручного ввода ──────────────────
+    if uid in pending and (is_admin or is_creator):
+        state = pending.pop(uid)
+        target_id = state["target_id"]
+        field = state["field"]
+        nick = state["nick"]
+
+        # Числовые поля
+        if field in ("warns", "reprimands", "points", "inactives"):
+            try:
+                val = int(text)
+                update_field(target_id, field, val)
+                send_edit_menu(vk, uid, target_id)
+            except ValueError:
+                send(vk, uid, "❌ Введи целое число")
+                pending[uid] = state
+            return
+
+        # Дробные поля
+        if field == "admin_level":
+            try:
+                val = float(text)
+                update_field(target_id, field, val)
+                send_edit_menu(vk, uid, target_id)
+            except ValueError:
+                send(vk, uid, "❌ Введи число (например: 1 или 1.5)")
+                pending[uid] = state
+            return
+
+        # Текстовые поля
+        if field == "rank":
+            update_field(target_id, field, text)
+            send_edit_menu(vk, uid, target_id)
+            return
+
+        # Даты
+        if field in ("date_promoted", "date_appointed"):
+            try:
+                datetime.strptime(text, "%d.%m.%Y")
+                update_field(target_id, field, text)
+                send_edit_menu(vk, uid, target_id)
+            except ValueError:
+                send(vk, uid, "❌ Неверный формат. Используй: дд.мм.гггг")
+                pending[uid] = state
+            return
+
     # ── Команды для всех ──────────────────────────────────
     if cmd == "/stats":
         row = get_user(uid)
@@ -199,6 +438,16 @@ def handle(vk, event):
         send(vk, uid, format_stats(row))
 
     # ── Команды администратора ────────────────────────────
+    elif cmd == "/edit" and (is_admin or is_creator):
+        if len(parts) < 2:
+            send(vk, uid, "❌ Используй: /edit [ник, id или @ник]")
+            return
+        row = find_user(vk, parts[1])
+        if not row:
+            send(vk, uid, "❌ Пользователь не найден в базе")
+            return
+        send_edit_menu(vk, uid, row[0])
+
     elif cmd == "/statsof" and (is_admin or is_creator):
         if len(parts) < 2:
             send(vk, uid, "❌ Используй: /statsof [id, @ник или ник из базы]")
@@ -372,7 +621,7 @@ def handle(vk, event):
         except ValueError:
             send(vk, uid, "❌ Неверный формат даты. Используй: дд.мм.гггг")
 
-    # ── Команды Спец Администратора (только создатель группы) ──
+    # ── Команды создателя группы ──────────────────────────
     elif cmd == "/addadmin" and is_creator:
         if len(parts) < 2:
             send(vk, uid, "❌ Используй: /addadmin [id или @ник]")
@@ -415,6 +664,7 @@ def handle(vk, event):
         if is_admin or is_creator:
             msg += (
                 "\n\n🔧 Команды администратора:\n"
+                "/edit [ник] — редактировать через кнопки ✨\n"
                 "/statsof [id или ник] — статистика сотрудника\n"
                 "/list — список всех сотрудников\n"
                 "/adduser [id или @ник] [ник] — добавить в базу\n"
